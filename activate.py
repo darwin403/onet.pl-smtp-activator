@@ -104,8 +104,6 @@ def activateSMTP(email, password):
                             (email, proxy, response.status_code))
             continue
 
-        # success
-        logging.info("user login (%s,%s) request: success" % (email, proxy))
         break
 
     # all login attempts failed
@@ -116,8 +114,12 @@ def activateSMTP(email, password):
     # user token from login session
     token = session.cookies.get_dict().get('onet_token')
 
-    # check if valid email/password credentials
-    if not token:
+    # check if valid token
+    if token:
+        # success
+        logging.info("user login (%s,%s) request: success" % (email, proxy))
+    else:
+        # bad email/password
         logging.warn("user login (%s,%s): invalid credentials" %
                      (email, proxy))
         return (False, email)
@@ -158,6 +160,7 @@ def activateSMTP(email, password):
 
         # validate JSON
         try:
+            response.encoding = 'utf-8-sig'
             result = response.json()
         except Exception as e:
             failedAttempts += 1
@@ -168,7 +171,7 @@ def activateSMTP(email, password):
                     'smtp activation (%s, %s) request: account blocked!' % (email, proxy))
                 return (False, email)
             else:
-                logging.error(
+                logging.warning(
                     'smtp activation (%s, %s) request: invalid JSON!, %s' % (email, proxy, str(e)))
                 return (False, email)
 
@@ -195,29 +198,43 @@ if __name__ == "__main__":
         passed = 0
         failed = 0
         totalAccounts = len(ACCOUNTS)
-        bad_ACCOUNTS = []
+        failed_ACCOUNTS = []
+        passed_ACCOUNTS = []
 
         for (status, email) in executor.map(lambda a: activateSMTP(a["email"], a["password"]), ACCOUNTS):
             if status == False:
                 failed += 1
-                bad_ACCOUNTS.append(email)
+                failed_ACCOUNTS.append(email)
                 continue
 
             passed += 1
+            passed_ACCOUNTS.append(email)
 
             logging.info('%s/%s processed' % (passed+failed, totalAccounts))
 
     # bot stats
     logging.info('accounts succeeded: %s/%s accounts' %
-                 (totalAccounts-len(bad_ACCOUNTS), totalAccounts))
+                 (totalAccounts-len(failed_ACCOUNTS), totalAccounts))
+
+    # create dumps dir
+    if not os.path.isdir('dumps'):
+        os.mkdir('dumps')
+
+    # save good accounts to text file
+    if passed_ACCOUNTS:
+        with open('dumps/accounts.passed.txt', 'w+') as f:
+            for a in passed_ACCOUNTS:
+                f.write("%s\r\n" % a)
+        logging.info('accounts failed: %s/%s accounts' %
+                     (len(passed_ACCOUNTS), totalAccounts))
 
     # save bad accounts to text file
-    if bad_ACCOUNTS:
-        with open('accounts.failed.txt', 'w+') as f:
-            for a in bad_ACCOUNTS:
-                f.write("%s\n" % a)
+    if failed_ACCOUNTS:
+        with open('dumps/accounts.failed.txt', 'w+') as f:
+            for a in failed_ACCOUNTS:
+                f.write("%s\r\n" % a)
         logging.info('accounts failed: %s/%s accounts' %
-                     (len(bad_ACCOUNTS), totalAccounts))
+                     (len(failed_ACCOUNTS), totalAccounts))
 
     # bot end
     logging.info('bot done!')
