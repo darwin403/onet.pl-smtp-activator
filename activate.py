@@ -1,10 +1,10 @@
 import json
 import logging
+import os
 import sys
 from concurrent.futures import ThreadPoolExecutor as PoolExecutor
-from itertools import cycle
 from configparser import ConfigParser
-import os
+from itertools import cycle
 
 import coloredlogs
 import requests
@@ -108,8 +108,9 @@ def activateSMTP(email, password):
 
     # all login attempts failed
     if (failedAttempts >= MAX_ATTEMPTS):
-        logging.warning("user login (%s,%s) request: max attempts exceed")
-        return (False, email)
+        logging.warning(
+            "user login (%s,%s) request: max attempts exceed" % (email, proxy))
+        return (False, (email, password))
 
     # user token from login session
     token = session.cookies.get_dict().get('onet_token')
@@ -122,7 +123,7 @@ def activateSMTP(email, password):
         # bad email/password
         logging.warn("user login (%s,%s): invalid credentials" %
                      (email, proxy))
-        return (False, email)
+        return (False, (email, password))
 
     # reset failed attempts
     failedAttempts = 0
@@ -169,11 +170,11 @@ def activateSMTP(email, password):
                 proxy = nextProxy()
                 logging.error(
                     'smtp activation (%s, %s) request: account blocked!' % (email, proxy))
-                return (False, email)
+                return (False, (email, password))
             else:
                 logging.warning(
                     'smtp activation (%s, %s) request: invalid JSON!, %s' % (email, proxy, str(e)))
-                return (False, email)
+                return (False, (email, password))
 
         # check if valid activation
         if result.get('error') != 0:
@@ -184,15 +185,19 @@ def activateSMTP(email, password):
         # success
         logging.info("smtp activation (%s, %s) request: success" %
                      (email, proxy))
-        return (True, email)
+        return (True, (email, password))
 
-    return (False, email)
+    return (False, (email, password))
 
 
 if __name__ == "__main__":
     logging.info("bot started!")
     logging.info("accounts loaded: %s accounts" % len(ACCOUNTS))
     logging.info("proxies loaded: %s proxies" % len(PROXIES))
+
+    # create dumps dir
+    if not os.path.isdir('dumps'):
+        os.mkdir('dumps')
 
     with PoolExecutor(max_workers=MAX_WORKERS) as executor:
         passed = 0
@@ -201,14 +206,23 @@ if __name__ == "__main__":
         failed_ACCOUNTS = []
         passed_ACCOUNTS = []
 
-        for (status, email) in executor.map(lambda a: activateSMTP(a["email"], a["password"]), ACCOUNTS):
+        for (status, (email, password)) in executor.map(lambda a: activateSMTP(a["email"], a["password"]), ACCOUNTS):
             if status == False:
                 failed += 1
                 failed_ACCOUNTS.append(email)
+
+                # append bad account to file
+                with open('dumps/accounts.failed.txt', 'a+') as f:
+                    f.write("%s\r\n" % (email + SEPARATOR + password))
+
                 continue
 
             passed += 1
             passed_ACCOUNTS.append(email)
+
+            # append good account to file
+            with open('dumps/accounts.passed.txt', 'a+') as f:
+                f.write("%s\r\n" % (email + SEPARATOR + password))
 
             logging.info('%s/%s processed' % (passed+failed, totalAccounts))
 
@@ -216,25 +230,8 @@ if __name__ == "__main__":
     logging.info('accounts succeeded: %s/%s accounts' %
                  (totalAccounts-len(failed_ACCOUNTS), totalAccounts))
 
-    # create dumps dir
-    if not os.path.isdir('dumps'):
-        os.mkdir('dumps')
-
-    # save good accounts to text file
-    if passed_ACCOUNTS:
-        with open('dumps/accounts.passed.txt', 'w+') as f:
-            for a in passed_ACCOUNTS:
-                f.write("%s\r\n" % a)
-        logging.info('accounts failed: %s/%s accounts' %
-                     (len(passed_ACCOUNTS), totalAccounts))
-
-    # save bad accounts to text file
-    if failed_ACCOUNTS:
-        with open('dumps/accounts.failed.txt', 'w+') as f:
-            for a in failed_ACCOUNTS:
-                f.write("%s\r\n" % a)
-        logging.info('accounts failed: %s/%s accounts' %
-                     (len(failed_ACCOUNTS), totalAccounts))
+    logging.info('accounts failed: %s/%s accounts' %
+                 (len(failed_ACCOUNTS), totalAccounts))
 
     # bot end
     logging.info('bot done!')
