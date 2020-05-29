@@ -52,17 +52,19 @@ with open('accounts.txt') as f:
 
 
 # load proxies
-with open('proxies.http.txt') as h, open('proxies.socks.txt') as s:
+with open('proxies.http.txt') as h, open('proxies.socks4.txt') as s4,  open('proxies.socks5.txt') as s5:
     for l in h:
-        line = l.strip()
-        if not line:
+        if not l.strip():
             continue
-        PROXIES.append('http://%s' % line)
-    for l in s:
-        line = l.strip()
-        if not line:
+        PROXIES.append('http://%s' % l.strip())
+    for l in s4:
+        if not l.strip():
             continue
-        PROXIES.append('socks5://%s' % line)
+        PROXIES.append('socks4://%s' % l.strip())
+    for l in s5:
+        if not l.strip():
+            continue
+        PROXIES.append('socks5://%s' % l.strip())
 
 C_PROXIES = cycle(PROXIES) if PROXIES else None
 
